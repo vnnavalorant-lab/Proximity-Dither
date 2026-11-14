@@ -1,8 +1,5 @@
 #version 150
 
-// Proximity Dither - fragment shader (armadura).
-// Gerado por tools/generate_shaders.py. Edite o script, nao este arquivo.
-
 uniform sampler2D Sampler0;
 
 uniform vec4 ColorModulator;
@@ -17,8 +14,8 @@ in vec2 texCoord0;
 
 out vec4 fragColor;
 
-const float DITHER_NEAR = 0.35;
-const float DITHER_FAR = 1.5;
+const float NEAR_DIST = 0.35;
+const float FAR_DIST = 1.5;
 
 const float BAYER4[16] = float[16](
      0.0,  8.0,  2.0, 10.0,
@@ -27,7 +24,7 @@ const float BAYER4[16] = float[16](
     15.0,  7.0, 13.0,  5.0
 );
 
-vec4 dither_linear_fog(vec4 inColor, float dist, float fogStart, float fogEnd, vec4 fogColor) {
+vec4 linear_fog(vec4 inColor, float dist, float fogStart, float fogEnd, vec4 fogColor) {
     if (dist <= fogStart) {
         return inColor;
     }
@@ -37,8 +34,8 @@ vec4 dither_linear_fog(vec4 inColor, float dist, float fogStart, float fogEnd, v
 
 void main() {
     float camDist = length(viewPos);
-    if (FogStart < 1.0e6 && camDist < DITHER_FAR) {
-        float visibility = smoothstep(DITHER_NEAR, DITHER_FAR, camDist);
+    if (FogStart < 1.0e6 && camDist < FAR_DIST) {
+        float visibility = smoothstep(NEAR_DIST, FAR_DIST, camDist);
         ivec2 cell = ivec2(mod(gl_FragCoord.xy, 4.0));
         float threshold = (BAYER4[cell.y * 4 + cell.x] + 0.5) / 16.0;
         if (visibility <= threshold) {
@@ -50,5 +47,5 @@ void main() {
     if (color.a < 0.1) {
         discard;
     }
-    fragColor = dither_linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+    fragColor = linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
 }

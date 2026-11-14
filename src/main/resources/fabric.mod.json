@@ -3,16 +3,20 @@
   "id": "proximitydither",
   "version": "${version}",
   "name": "Proximity Dither",
-  "description": "Recria o Camera Proximity Dithering do Bedrock: entidades perto da camera desaparecem em um padrao de pontos (dither) em vez de bloquear a visao.",
+  "description": "Entidades coladas na câmera somem em padrão de pontos, como no Bedrock, em vez de tapar a tela.",
+  "authors": ["SEU_NOME"],
+  "contact": {
+    "homepage": "https://github.com/SEU_USUARIO/proximity-dither",
+    "sources": "https://github.com/SEU_USUARIO/proximity-dither"
+  },
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "client": [
-      "com.proximitydither.ProximityDitherClient"
-    ]
+    "client": ["com.proximitydither.ProximityDitherClient"]
   },
   "depends": {
     "fabricloader": ">=0.14.21",
+    "fabric-resource-loader-v0": "*",
     "minecraft": "~1.20.1",
     "java": ">=17"
   }

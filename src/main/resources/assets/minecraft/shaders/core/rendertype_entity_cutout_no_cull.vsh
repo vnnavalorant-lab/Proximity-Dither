@@ -1,8 +1,5 @@
 #version 150
 
-// Proximity Dither - vertex shader (formato de vertice de entidade).
-// Gerado por tools/generate_shaders.py. Edite o script, nao este arquivo.
-
 #define MINECRAFT_LIGHT_POWER   (0.6)
 #define MINECRAFT_AMBIENT_LIGHT (0.4)
 
@@ -31,7 +28,7 @@ out vec4 lightMapColor;
 out vec4 overlayColor;
 out vec2 texCoord0;
 
-vec4 dither_mix_light(vec3 lightDir0, vec3 lightDir1, vec3 normal, vec4 color) {
+vec4 minecraft_mix_light(vec3 lightDir0, vec3 lightDir1, vec3 normal, vec4 color) {
     lightDir0 = normalize(lightDir0);
     lightDir1 = normalize(lightDir1);
     float light0 = max(0.0, dot(lightDir0, normal));
@@ -40,7 +37,7 @@ vec4 dither_mix_light(vec3 lightDir0, vec3 lightDir1, vec3 normal, vec4 color) {
     return vec4(color.rgb * lightAccum, color.a);
 }
 
-float dither_fog_distance(mat4 modelViewMat, vec3 pos, int shape) {
+float fog_distance(mat4 modelViewMat, vec3 pos, int shape) {
     if (shape == 0) {
         return length((modelViewMat * vec4(pos, 1.0)).xyz);
     }
@@ -53,9 +50,9 @@ void main() {
     vec4 viewPosition = ModelViewMat * vec4(Position, 1.0);
     gl_Position = ProjMat * viewPosition;
 
-    vertexDistance = dither_fog_distance(ModelViewMat, IViewRotMat * Position, FogShape);
+    vertexDistance = fog_distance(ModelViewMat, IViewRotMat * Position, FogShape);
     viewPos = viewPosition.xyz;
-    vertexColor = dither_mix_light(Light0_Direction, Light1_Direction, Normal, Color);
+    vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, Color);
     lightMapColor = texelFetch(Sampler2, UV2 / 16, 0);
     overlayColor = texelFetch(Sampler1, UV1, 0);
     texCoord0 = UV0;

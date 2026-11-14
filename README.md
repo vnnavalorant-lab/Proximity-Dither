@@ -1,51 +1,42 @@
-# Proximity Dither (Fabric 1.20.1)
+# Proximity Dither
 
-Recria o **Camera Proximity Dithering** do Bedrock: quando uma entidade (mob, jogador, armadura, capa...) chega perto da câmera, os pixels dela somem num padrão de pontos (Bayer 4x4) em vez de tampar a tela.
+Porta pro Fabric 1.20.1 do dithering de proximidade da câmera do Bedrock. Quando um mob, jogador ou armadura chega muito perto da câmera, em vez de tampar a tela ele vai sumindo em pontinhos (padrão Bayer 4x4).
 
-Todo o efeito está nos *core shaders* em `src/main/resources/assets/minecraft/shaders/core/`. O código Java é só o ponto de entrada.
+Funciona só com core shaders. Os shaders vêm dentro do próprio jar e já entram ativos quando o mod carrega, não precisa ligar resource pack nenhum.
 
-## Testar rápido (sem compilar)
+## Instalar
 
-O zip `proximity-dither-resourcepack.zip` é um resource pack com os mesmos shaders. Coloque em `.minecraft/resourcepacks/`, ative no jogo e pronto.
+Pega o `.jar` nos artifacts do Actions (ou compila, abaixo) e joga em `mods/`. Precisa de Minecraft 1.20.1, Fabric Loader 0.14.21 ou mais novo e o [Fabric API](https://modrinth.com/mod/fabric-api) (é ele que carrega os shaders do mod).
 
-## Compilar o mod
+Se quiser só testar o efeito sem o mod, o mesmo conteúdo sai como resource pack (`proximity-dither-resourcepack.zip`, também nos artifacts). Não use o pack junto com o mod, é redundante.
 
-Precisa de JDK 17 e internet na primeira vez.
+## Compilar
+
+JDK 17.
 
 ```
 gradle wrapper --gradle-version 8.5
 ./gradlew build
 ```
 
-O `.jar` sai em `build/libs/` (use o que **não** termina em `-sources`). Coloque na pasta `mods/` do Fabric Loader 0.14.21+ com Minecraft 1.20.1. Não precisa do Fabric API.
+O jar fica em `build/libs/` (o que não termina em `-sources`).
 
-## Ajustar as distâncias
+## Distâncias
+
+Os shaders são gerados por `tools/generate_shaders.py`, então não edite os `.vsh/.fsh` na mão:
 
 ```
 python3 tools/generate_shaders.py --near 0.5 --far 2.5
 ```
 
-- `near`: abaixo disso (em blocos) a entidade some por completo. Padrão `0.35`.
-- `far`: a partir daqui a entidade fica totalmente visível. Padrão `1.5`.
+`near` é onde some de vez (padrão 0.35 blocos) e `far` é onde volta ao normal (padrão 1.5).
 
-O script regera os `.json/.vsh/.fsh`. Depois é só recompilar (ou recriar o zip do resource pack).
+## O que cobre
 
-## Como funciona
+`entity_cutout`, `entity_cutout_no_cull`, `entity_solid`, `entity_translucent` e `armor_cutout_no_cull`. Dá conta de mobs, jogador, armadura e capa. Mão em primeira pessoa e itens de GUI ficam de fora.
 
-1. O vertex shader manda a posição do pixel no espaço da câmera para o fragment shader.
-2. O fragment shader calcula a distância até a câmera e converte em visibilidade (0 a 1) com `smoothstep(near, far, distância)`.
-3. Compara a visibilidade com um limiar da matriz Bayer 4x4, indexada por `gl_FragCoord`. Se a visibilidade for menor, o pixel é descartado.
-4. O resto (textura, luz, overlay de dano, névoa) segue a mesma ordem do vanilla.
+## Problemas conhecidos
 
-A mão em primeira pessoa e os itens da GUI ficam de fora: nesses casos o jogo deixa `FogStart` gigante, e o shader pula o dithering.
-
-## Programas cobertos
-
-`rendertype_entity_cutout`, `rendertype_entity_cutout_no_cull`, `rendertype_entity_solid`, `rendertype_entity_translucent` e `rendertype_armor_cutout_no_cull`. Isso cobre mobs, jogador, armaduras e capas.
-
-## Limitações conhecidas
-
-- **Não foi compilado nem testado no jogo.** Foi escrito sem acesso aos shaders originais do vanilla, então pode precisar de ajuste.
-- Não cobre olhos de aranha/Enderman (`rendertype_eyes`), brilho de encantamento, `entity_translucent_cull`, itens caídos translúcidos nem `entity_cutout_no_cull_z_offset`. Esses podem ficar visíveis enquanto o corpo some.
-- Não funciona com shader packs do Iris/Optifine ativos, que substituem esses programas.
-- Outros mods ou resource packs que substituem os mesmos arquivos em `assets/minecraft/shaders/core/` entram em conflito.
+- Ainda pouco testado, então pode ter bug.
+- Olhos de aranha/Enderman, brilho de encantamento e itens caídos translúcidos não entram, e podem ficar visíveis enquanto o resto some.
+- Não combina com Iris/Optifine com shader pack ligado, nem com outro mod ou pack que troque os mesmos arquivos de `shaders/core`.
