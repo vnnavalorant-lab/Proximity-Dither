@@ -1,0 +1,64 @@
+#version 150
+
+// Proximity Dither - fragment shader.
+// Inspirado no "Camera Proximity Dithering" do Minecraft Bedrock: perto da camera,
+// pixels da entidade sao descartados num padrao Bayer 4x4 fixo na tela.
+// Gerado por tools/generate_shaders.py. Edite o script, nao este arquivo.
+
+uniform sampler2D Sampler0;
+
+uniform vec4 ColorModulator;
+uniform float FogStart;
+uniform float FogEnd;
+uniform vec4 FogColor;
+
+in float vertexDistance;
+in vec3 viewPos;
+in vec4 vertexColor;
+in vec4 lightMapColor;
+in vec4 overlayColor;
+in vec2 texCoord0;
+
+out vec4 fragColor;
+
+// Distancias em blocos, medidas da camera ate o pixel.
+const float DITHER_NEAR = 0.35; // abaixo disso: totalmente invisivel
+const float DITHER_FAR = 1.5;   // acima disso: totalmente visivel
+
+const float BAYER4[16] = float[16](
+     0.0,  8.0,  2.0, 10.0,
+    12.0,  4.0, 14.0,  6.0,
+     3.0, 11.0,  1.0,  9.0,
+    15.0,  7.0, 13.0,  5.0
+);
+
+vec4 dither_linear_fog(vec4 inColor, float dist, float fogStart, float fogEnd, vec4 fogColor) {
+    if (dist <= fogStart) {
+        return inColor;
+    }
+    float fogValue = dist < fogEnd ? smoothstep(fogStart, fogEnd, dist) : 1.0;
+    return vec4(mix(inColor.rgb, fogColor.rgb, fogValue * fogColor.a), inColor.a);
+}
+
+void main() {
+    // Fora do mundo (mao em primeira pessoa, GUI) o jogo deixa FogStart gigante.
+    // Nesses casos o dithering nao e aplicado.
+    float camDist = length(viewPos);
+    if (FogStart < 1.0e6 && camDist < DITHER_FAR) {
+        float visibility = smoothstep(DITHER_NEAR, DITHER_FAR, camDist);
+        ivec2 cell = ivec2(mod(gl_FragCoord.xy, 4.0));
+        float threshold = (BAYER4[cell.y * 4 + cell.x] + 0.5) / 16.0;
+        if (visibility <= threshold) {
+            discard;
+        }
+    }
+
+    vec4 color = texture(Sampler0, texCoord0) * vertexColor;
+    if (color.a < 0.1) {
+        discard;
+    }
+    color *= ColorModulator;
+    color.rgb = mix(overlayColor.rgb, color.rgb, overlayColor.a);
+    color *= lightMapColor;
+    fragColor = dither_linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+}

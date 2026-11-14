@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.5
+
+      - name: Build
+        run: gradle build
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: proximity-dither-mod
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar
+
+      - name: Build resource pack
+        run: |
+          mkdir -p pack
+          cp -r src/main/resources/assets pack/assets
+          printf '{\n  "pack": {\n    "pack_format": 15,\n    "description": "Proximity Dither (shaders)"\n  }\n}\n' > pack/pack.mcmeta
+          cd pack && zip -qr ../proximity-dither-resourcepack.zip pack.mcmeta assets
+
+      - name: Upload resource pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: proximity-dither-resourcepack
+          path: proximity-dither-resourcepack.zip
