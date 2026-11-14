@@ -53,11 +53,11 @@ void main() {
         }
     }
 
-    vec4 color = texture(Sampler0, texCoord0) * vertexColor;
+    vec4 color = texture(Sampler0, texCoord0);
     if (color.a < 0.1) {
         discard;
     }
-    color *= ColorModulator;
+    color *= vertexColor * ColorModulator;
     color.rgb = mix(overlayColor.rgb, color.rgb, overlayColor.a);
     color *= lightMapColor;
     fragColor = dither_linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);

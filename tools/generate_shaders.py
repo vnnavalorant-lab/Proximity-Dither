@@ -16,13 +16,15 @@ from pathlib import Path
 IDENT3 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 IDENT4 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
 
-# programa -> (descarta alpha baixo?, usa blend translucido?)
+# programa -> (descarta alpha baixo?, tipo: "entity" ou "armor")
+# O formato do armor e diferente no vanilla: sem IViewRotMat, sem overlay (Sampler1),
+# e a luz (lightmap) ja e multiplicada no vertex shader.
 VARIANTS = {
-    "rendertype_entity_cutout_no_cull": (True, False),
-    "rendertype_entity_cutout": (True, False),
-    "rendertype_entity_solid": (False, False),
-    "rendertype_entity_translucent": (True, True),
-    "rendertype_armor_cutout_no_cull": (True, False),
+    "rendertype_entity_cutout_no_cull": (True, "entity"),
+    "rendertype_entity_cutout": (True, "entity"),
+    "rendertype_entity_solid": (False, "entity"),
+    "rendertype_entity_translucent": (True, "entity"),
+    "rendertype_armor_cutout_no_cull": (True, "armor"),
 }
 
 VSH = """#version 150
@@ -144,28 +146,146 @@ void main() {
         }
     }
 
-    vec4 color = texture(Sampler0, texCoord0) * vertexColor;
-@ALPHA@    color *= ColorModulator;
+    vec4 color = texture(Sampler0, texCoord0);
+@ALPHA@    color *= vertexColor * ColorModulator;
     color.rgb = mix(overlayColor.rgb, color.rgb, overlayColor.a);
     color *= lightMapColor;
     fragColor = dither_linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
 }
 """
 
+VSH_ARMOR = """#version 150
+
+// Proximity Dither - vertex shader (armadura, formato vanilla do armor_cutout_no_cull).
+// Gerado por tools/generate_shaders.py. Edite o script, nao este arquivo.
+
+#define MINECRAFT_LIGHT_POWER   (0.6)
+#define MINECRAFT_AMBIENT_LIGHT (0.4)
+
+in vec3 Position;
+in vec4 Color;
+in vec2 UV0;
+in ivec2 UV1;
+in ivec2 UV2;
+in vec3 Normal;
+
+uniform sampler2D Sampler2;
+
+uniform mat4 ModelViewMat;
+uniform mat4 ProjMat;
+uniform int FogShape;
+
+uniform vec3 Light0_Direction;
+uniform vec3 Light1_Direction;
+
+out float vertexDistance;
+out vec3 viewPos;
+out vec4 vertexColor;
+out vec2 texCoord0;
+
+vec4 dither_mix_light(vec3 lightDir0, vec3 lightDir1, vec3 normal, vec4 color) {
+    lightDir0 = normalize(lightDir0);
+    lightDir1 = normalize(lightDir1);
+    float light0 = max(0.0, dot(lightDir0, normal));
+    float light1 = max(0.0, dot(lightDir1, normal));
+    float lightAccum = min(1.0, (light0 + light1) * MINECRAFT_LIGHT_POWER + MINECRAFT_AMBIENT_LIGHT);
+    return vec4(color.rgb * lightAccum, color.a);
+}
+
+float dither_fog_distance(mat4 modelViewMat, vec3 pos, int shape) {
+    if (shape == 0) {
+        return length((modelViewMat * vec4(pos, 1.0)).xyz);
+    }
+    float distXZ = length((modelViewMat * vec4(pos.x, 0.0, pos.z, 1.0)).xyz);
+    float distY = length((modelViewMat * vec4(0.0, pos.y, 0.0, 1.0)).xyz);
+    return max(distXZ, distY);
+}
+
+void main() {
+    vec4 viewPosition = ModelViewMat * vec4(Position, 1.0);
+    gl_Position = ProjMat * viewPosition;
+
+    vertexDistance = dither_fog_distance(ModelViewMat, Position, FogShape);
+    viewPos = viewPosition.xyz;
+    vertexColor = dither_mix_light(Light0_Direction, Light1_Direction, Normal, Color) * texelFetch(Sampler2, UV2 / 16, 0);
+    texCoord0 = UV0;
+}
+"""
+
+FSH_ARMOR = """#version 150
+
+// Proximity Dither - fragment shader (armadura).
+// Gerado por tools/generate_shaders.py. Edite o script, nao este arquivo.
+
+uniform sampler2D Sampler0;
+
+uniform vec4 ColorModulator;
+uniform float FogStart;
+uniform float FogEnd;
+uniform vec4 FogColor;
+
+in float vertexDistance;
+in vec3 viewPos;
+in vec4 vertexColor;
+in vec2 texCoord0;
+
+out vec4 fragColor;
+
+const float DITHER_NEAR = @NEAR@;
+const float DITHER_FAR = @FAR@;
+
+const float BAYER4[16] = float[16](
+     0.0,  8.0,  2.0, 10.0,
+    12.0,  4.0, 14.0,  6.0,
+     3.0, 11.0,  1.0,  9.0,
+    15.0,  7.0, 13.0,  5.0
+);
+
+vec4 dither_linear_fog(vec4 inColor, float dist, float fogStart, float fogEnd, vec4 fogColor) {
+    if (dist <= fogStart) {
+        return inColor;
+    }
+    float fogValue = dist < fogEnd ? smoothstep(fogStart, fogEnd, dist) : 1.0;
+    return vec4(mix(inColor.rgb, fogColor.rgb, fogValue * fogColor.a), inColor.a);
+}
+
+void main() {
+    float camDist = length(viewPos);
+    if (FogStart < 1.0e6 && camDist < DITHER_FAR) {
+        float visibility = smoothstep(DITHER_NEAR, DITHER_FAR, camDist);
+        ivec2 cell = ivec2(mod(gl_FragCoord.xy, 4.0));
+        float threshold = (BAYER4[cell.y * 4 + cell.x] + 0.5) / 16.0;
+        if (visibility <= threshold) {
+            discard;
+        }
+    }
+
+    vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
+@ALPHA@    fragColor = dither_linear_fog(color, vertexDistance, FogStart, FogEnd, FogColor);
+}
+"""
+
 ALPHA_TEST = "    if (color.a < 0.1) {\n        discard;\n    }\n"
 
 
-def make_json(name: str, translucent: bool) -> dict:
+def make_json(name: str, kind: str) -> dict:
+    armor = kind == "armor"
     data = {}
-    if translucent:
-        data["blend"] = {"func": "add", "srcrgb": "srcalpha", "dstrgb": "1-srcalpha"}
+    # Todos os programas de entidade do vanilla 1.20.1 usam este blend.
+    data["blend"] = {"func": "add", "srcrgb": "srcalpha", "dstrgb": "1-srcalpha"}
     data["vertex"] = name
     data["fragment"] = name
-    data["samplers"] = [{"name": "Sampler0"}, {"name": "Sampler1"}, {"name": "Sampler2"}]
-    data["uniforms"] = [
+    # SEM "attributes" o jogo nao liga Color/UV1/UV2/Normal aos dados do vertice -> tudo preto.
+    data["attributes"] = ["Position", "Color", "UV0", "UV1", "UV2", "Normal"]
+    data["samplers"] = [{"name": "Sampler0"}, {"name": "Sampler2"}] if armor else \
+        [{"name": "Sampler0"}, {"name": "Sampler1"}, {"name": "Sampler2"}]
+    uniforms = [
         {"name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": IDENT4},
         {"name": "ProjMat", "type": "matrix4x4", "count": 16, "values": IDENT4},
-        {"name": "IViewRotMat", "type": "matrix3x3", "count": 9, "values": IDENT3},
+    ]
+    if not armor:
+        uniforms.append({"name": "IViewRotMat", "type": "matrix3x3", "count": 9, "values": IDENT3})
+    uniforms += [
         {"name": "ColorModulator", "type": "float", "count": 4, "values": [1.0, 1.0, 1.0, 1.0]},
         {"name": "Light0_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0]},
         {"name": "Light1_Direction", "type": "float", "count": 3, "values": [0.0, 0.0, 0.0]},
@@ -174,6 +294,7 @@ def make_json(name: str, translucent: bool) -> dict:
         {"name": "FogColor", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0]},
         {"name": "FogShape", "type": "int", "count": 1, "values": [0]},
     ]
+    data["uniforms"] = uniforms
     return data
 
 
@@ -188,15 +309,17 @@ def main() -> None:
     out_dir = Path(__file__).resolve().parent.parent / "src/main/resources/assets/minecraft/shaders/core"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for name, (alpha_test, translucent) in VARIANTS.items():
+    for name, (alpha_test, kind) in VARIANTS.items():
+        fsh_tpl = FSH_ARMOR if kind == "armor" else FSH
+        vsh_src = VSH_ARMOR if kind == "armor" else VSH
         fsh = (
-            FSH.replace("@NEAR@", repr(float(args.near)))
+            fsh_tpl.replace("@NEAR@", repr(float(args.near)))
             .replace("@FAR@", repr(float(args.far)))
             .replace("@ALPHA@", ALPHA_TEST if alpha_test else "")
         )
-        (out_dir / f"{name}.vsh").write_text(VSH, encoding="ascii")
+        (out_dir / f"{name}.vsh").write_text(vsh_src, encoding="ascii")
         (out_dir / f"{name}.fsh").write_text(fsh, encoding="ascii")
-        (out_dir / f"{name}.json").write_text(json.dumps(make_json(name, translucent), indent=4) + "\n", encoding="ascii")
+        (out_dir / f"{name}.json").write_text(json.dumps(make_json(name, kind), indent=4) + "\n", encoding="ascii")
 
     print(f"{len(VARIANTS)} programas gerados em {out_dir} (near={args.near}, far={args.far})")
 
